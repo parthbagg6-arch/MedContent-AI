@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MedContent AI — Healthcare Content Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="authView" class="auth-shell">
+    <section class="auth-visual">
+      <div class="brand brand-light"><span class="brand-mark">+</span> MedContent <b>AI</b></div>
+      <div class="visual-copy"><span class="eyebrow">HEALTHCARE CONTENT STUDIO</span><h1>Make medical knowledge<br><em>easier to understand.</em></h1><p>Create clear, responsible healthcare content for patients, students and medical professionals.</p></div>
+      <div class="visual-foot"><span>✦</span> Clear communication. Better understanding.</div>
+      <div class="orb orb-one"></div><div class="orb orb-two"></div>
+    </section>
+    <section class="auth-panel">
+      <div class="auth-card">
+        <div class="mobile-brand brand"><span class="brand-mark">+</span> MedContent <b>AI</b></div>
+        <div class="auth-heading"><span class="eyebrow">WELCOME</span><h2 id="authTitle">Sign in to your workspace</h2><p id="authSubtitle">Access your medical content studio.</p></div>
+        <form id="authForm">
+          <div class="field" id="nameField" hidden><label for="name">Full name</label><input id="name" type="text" placeholder="Your name" autocomplete="name"></div>
+          <div class="field"><label for="email">Email address</label><input id="email" type="email" placeholder="name@example.com" autocomplete="email" required></div>
+          <div class="field"><label for="password">Password</label><input id="password" type="password" placeholder="At least 8 characters" autocomplete="current-password" required></div>
+          <button class="primary-btn full-btn" id="authSubmit" type="submit">Sign in <span>→</span></button>
+          <p class="form-message" id="authMessage" role="alert"></p>
+        </form>
+        <p class="switch-auth"><span id="switchText">New to MedContent AI?</span> <button id="switchMode" type="button">Create an account</button></p>
+        <p class="privacy-note">Your workspace is private. Passwords are securely hashed.</p>
+      </div>
+    </section>
+  </div>
+
+  <div id="appView" hidden>
+    <header class="topbar"><a class="brand" href="#"><span class="brand-mark">+</span> MedContent <b>AI</b></a><div class="top-actions"><span class="secure-label">● Secure workspace</span><span class="user-chip" id="userName">User</span><button id="logoutBtn" class="logout-btn">Log out ↗</button></div></header>
+    <main class="main-wrap">
+      <section class="welcome-row"><div><span class="eyebrow">YOUR HEALTHCARE WRITING ASSISTANT</span><h1>Medical content, made clearer.</h1><p>Generate thoughtful healthcare content tailored to your audience.</p></div><div class="hero-symbol">✚</div></section>
+      <div class="notice"><span>ⓘ</span><p><b>Responsible use:</b> This tool creates educational content only. It does not diagnose conditions, prescribe treatment, or replace advice from a qualified healthcare professional.</p></div>
+      <section class="workspace">
+        <div class="form-card">
+          <div class="section-title"><div class="title-icon">✎</div><div><h2>Build your content</h2><p>Choose a format and describe what you need.</p></div></div>
+          <form id="generatorForm">
+            <div class="field"><label for="topic">Medical topic or brief</label><textarea id="topic" rows="5" maxlength="1500" placeholder="e.g. Explain the importance of regular blood pressure monitoring for adults..." required></textarea><div class="field-hint"><span>Be specific for a more useful result.</span><span id="charCount">0 / 1500</span></div></div>
+            <div class="two-col">
+              <div class="field"><label for="contentType">Content format</label><select id="contentType"><option>Patient Education Article</option><option>Medical Blog</option><option>Healthcare Awareness Post</option><option>Clinical Topic Summary</option><option>Medical Newsletter</option><option>Hospital Website Copy</option><option>Medical Student Notes</option><option>Research Topic Overview</option></select></div>
+              <div class="field"><label for="audience">Target audience</label><select id="audience"><option>General public</option><option>Patients and caregivers</option><option>Medical students</option><option>Healthcare professionals</option><option>Children and parents</option><option>Hospital administrators</option></select></div>
+            </div>
+            <div class="field"><label for="tone">Writing tone</label><select id="tone"><option>Clear and reassuring</option><option>Professional and informative</option><option>Simple and beginner-friendly</option><option>Academic and formal</option><option>Empathetic and supportive</option></select></div>
+            <button class="primary-btn full-btn" id="generateBtn" type="submit">✦ &nbsp; Generate medical content <span>→</span></button>
+            <p class="form-message" id="generateMessage" role="status"></p>
+          </form>
+        </div>
+        <div class="result-card"><div class="result-top"><div><span class="eyebrow">AI GENERATED OUTPUT</span><h2>Your content</h2></div><span class="output-badge">✦ MedContent</span></div>
+          <div id="result" class="result-area"><div class="empty-state"><div class="empty-icon">✚</div><h3>Your draft will appear here</h3><p>Enter a medical topic, select your audience and generate your first draft.</p></div></div>
+          <div class="result-actions"><button id="copyBtn" class="outline-btn" disabled>▣ &nbsp; Copy</button><button id="downloadBtn" class="outline-btn" disabled>↓ &nbsp; Download .txt</button></div>
+          <div class="disclaimer-small">Always review medical content for accuracy before publishing or sharing.</div>
+        </div>
+      </section>
+      <section class="feature-row"><div><span>01</span><b>Medical-first prompts</b><p>Designed for healthcare and medical communication.</p></div><div><span>02</span><b>Audience-aware writing</b><p>Adapt the language for patients, students or professionals.</p></div><div><span>03</span><b>Responsible output</b><p>Prompts encourage careful, educational medical information.</p></div></section>
+      <footer>© 2026 MedContent AI <span>Healthcare content assistance · Not medical advice</span></footer>
+    </main>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>
