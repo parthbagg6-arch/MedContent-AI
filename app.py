@@ -51,7 +51,7 @@ def authenticate(email, password):
 
 def get_client():
     key = ""
-   model = "openrouter/free"
+    model = "openrouter/free"
     try:
         key = st.secrets.get("OPENROUTER_API_KEY", "")
         model = st.secrets.get("OPENROUTER_MODEL", model)
