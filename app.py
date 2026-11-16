@@ -1,133 +1,72 @@
 import os
 import sqlite3
-from functools import wraps
 from pathlib import Path
 
-from flask import Flask, request, jsonify, send_from_directory, session
-from werkzeug.security import generate_password_hash, check_password_hash
+import streamlit as st
 from openai import OpenAI
-from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
 
-load_dotenv()
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-FRONTEND_DIR = BASE_DIR / "frontend"
+BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "users.db"
 
-app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "change-this-secret-before-deployment")
-app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
-
-API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3-ultra-550b-a35b:free")
-client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=API_KEY) if API_KEY else None
-
+st.set_page_config(page_title="MedContent AI", page_icon="✚", layout="wide")
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-
 def init_db():
     with get_db() as conn:
-        conn.execute("""CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
-
-def login_required(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        if not session.get("user_id"):
-            return jsonify({"error": "Please log in to continue."}), 401
-        return fn(*args, **kwargs)
-    return wrapper
-
-
-@app.route("/")
-def home():
-    return send_from_directory(FRONTEND_DIR, "index.html")
-
-
-@app.route("/<path:filename>")
-def frontend_files(filename):
-    return send_from_directory(FRONTEND_DIR, filename)
-
-
-@app.post("/api/register")
-def register():
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    email = (data.get("email") or "").strip().lower()
-    password = data.get("password") or ""
-    if not name or not email or not password:
-        return jsonify(error="Please fill in all fields."), 400
-    if len(password) < 8:
-        return jsonify(error="Password must be at least 8 characters."), 400
-    if "@" not in email or "." not in email.split("@")[-1]:
-        return jsonify(error="Enter a valid email address."), 400
+def register_user(name, email, password):
     try:
         with get_db() as conn:
-            cur = conn.execute(
+            conn.execute(
                 "INSERT INTO users(name,email,password_hash) VALUES(?,?,?)",
-                (name, email, generate_password_hash(password))
+                (name.strip(), email.strip().lower(), generate_password_hash(password))
             )
-            session.clear()
-            session["user_id"] = cur.lastrowid
-            session["user_name"] = name
-        return jsonify(success=True, name=name)
+        return True, "Account created. You can now sign in."
     except sqlite3.IntegrityError:
-        return jsonify(error="An account with this email already exists."), 409
+        return False, "An account with this email already exists."
 
-
-@app.post("/api/login")
-def login():
-    data = request.get_json(silent=True) or {}
-    email = (data.get("email") or "").strip().lower()
-    password = data.get("password") or ""
+def authenticate(email, password):
     with get_db() as conn:
-        user = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
-    if not user or not check_password_hash(user["password_hash"], password):
-        return jsonify(error="Incorrect email or password."), 401
-    session.clear()
-    session["user_id"] = user["id"]
-    session["user_name"] = user["name"]
-    return jsonify(success=True, name=user["name"])
+        user = conn.execute(
+            "SELECT id, name, email, password_hash FROM users WHERE email=?",
+            (email.strip().lower(),)
+        ).fetchone()
+    if user and check_password_hash(user["password_hash"], password):
+        return dict(user)
+    return None
 
+def get_client():
+    key = ""
+    model = "nvidia/nemotron-3-ultra-550b-a35b:free"
+    try:
+        key = st.secrets.get("OPENROUTER_API_KEY", "")
+        model = st.secrets.get("OPENROUTER_MODEL", model)
+    except Exception:
+        pass
+    key = key or os.getenv("OPENROUTER_API_KEY", "")
+    model = os.getenv("OPENROUTER_MODEL", model)
+    if not key:
+        return None, model
+    return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=key), model
 
-@app.get("/api/me")
-def me():
-    if not session.get("user_id"):
-        return jsonify(logged_in=False)
-    return jsonify(logged_in=True, name=session.get("user_name", "User"))
-
-
-@app.post("/api/logout")
-def logout():
-    session.clear()
-    return jsonify(success=True)
-
-
-@app.post("/api/generate")
-@login_required
-def generate():
-    data = request.get_json(silent=True) or {}
-    topic = (data.get("topic") or "").strip()
-    content_type = (data.get("content_type") or "Patient Education Article").strip()
-    audience = (data.get("audience") or "General public").strip()
-    tone = (data.get("tone") or "Clear and reassuring").strip()
-    if not topic:
-        return jsonify(error="Enter a medical topic or brief first."), 400
-    if len(topic) > 1500:
-        return jsonify(error="Please keep the topic under 1,500 characters."), 400
+def generate_content(topic, content_type, audience, tone):
+    client, model = get_client()
     if client is None:
-        return jsonify(error="AI service is not configured. Add OPENROUTER_API_KEY to your environment."), 503
-
+        raise RuntimeError("AI service is not configured. Add OPENROUTER_API_KEY in Streamlit Secrets.")
     prompt = f"""Create a well-structured {content_type} about: {topic}
 Intended audience: {audience}
 Tone: {tone}
@@ -142,24 +81,164 @@ DOMAIN RULES:
 - If a requested claim is uncertain or controversial, say so rather than presenting it as fact.
 - Make the output useful, readable, original, and formatted with headings and bullet points where appropriate.
 Return the content only, followed by a short medical-information disclaimer."""
-    try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": "You are MedContent AI, a careful medical and healthcare content writing assistant. You create educational content, not individual medical advice."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.4,
-            max_tokens=1200
-        )
-        content = response.choices[0].message.content or ""
-        return jsonify(content=content)
-    except Exception as exc:
-        app.logger.exception("Content generation failed: %s", exc)
-        return jsonify(error="Content generation failed. Check your API key, model availability, and connection."), 502
-
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "You are MedContent AI, a careful medical and healthcare content writing assistant. You create educational content, not individual medical advice."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.4,
+        max_tokens=1200
+    )
+    return response.choices[0].message.content or ""
 
 init_db()
+if "user" not in st.session_state:
+    st.session_state.user = None
+if "generated_content" not in st.session_state:
+    st.session_state.generated_content = ""
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False)
+st.markdown("""
+<style>
+:root { color-scheme: light; }
+.block-container {max-width: 1180px; padding-top: 2rem; padding-bottom: 3rem;}
+.stApp {background: linear-gradient(135deg,#f4f8fb 0%,#eef5f4 55%,#f8f7fc 100%);}
+.hero {background:linear-gradient(115deg,#102f42,#176b69);padding:2rem 2.2rem;border-radius:22px;color:white;margin-bottom:1.3rem;box-shadow:0 12px 35px #12384a20;}
+.hero h1 {color:white;font-size:2.35rem;margin:0 0 .35rem 0;}
+.hero p {color:#d8eeeb;margin:0;font-size:1.02rem;}
+.panel {background:white;border:1px solid #e3ecee;border-radius:18px;padding:1.35rem 1.5rem;box-shadow:0 8px 26px #173c4a0b;}
+.small-muted {color:#637780;font-size:.9rem;}
+div[data-testid="stForm"] {background:white;border:1px solid #e3ecee;border-radius:18px;padding:1.3rem;}
+.stButton>button, .stFormSubmitButton>button {border-radius:10px;font-weight:650;}
+.notice {background:#e9f4f2;border-left:4px solid #27877c;padding:.9rem 1rem;border-radius:9px;color:#244c50;margin:1rem 0;}
+footer {color:#6c7d83;text-align:center;margin-top:2rem;font-size:.85rem;}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="hero">
+  <h1>✚ MedContent AI</h1>
+  <p>Healthcare content studio · Clear, responsible medical communication</p>
+</div>
+""", unsafe_allow_html=True)
+
+if st.session_state.user is None:
+    left, right = st.columns([1.05, 1.2], gap="large")
+    with left:
+        st.markdown("""
+        <div class="panel">
+          <h2>Make medical knowledge easier to understand.</h2>
+          <p>Create clear healthcare content for patients, students and medical professionals.</p>
+          <hr>
+          <p>✦ Audience-aware writing<br>✦ Multiple medical content formats<br>✦ Copy and download drafts<br>✦ Passwords securely hashed</p>
+          <p class="small-muted">Your workspace is private. Do not enter patient-identifiable information.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with right:
+        st.markdown('<div class="panel">', unsafe_allow_html=True)
+        mode = st.radio("Welcome", ["Sign in", "Create account"], horizontal=True, label_visibility="collapsed")
+        if mode == "Create account":
+            with st.form("register_form", clear_on_submit=False):
+                name = st.text_input("Full name", placeholder="Your name")
+                email = st.text_input("Email address", placeholder="name@example.com")
+                password = st.text_input("Password", type="password", help="At least 8 characters")
+                confirm = st.text_input("Confirm password", type="password")
+                submitted = st.form_submit_button("Create account", use_container_width=True)
+            if submitted:
+                if not name.strip() or not email.strip() or not password:
+                    st.error("Please fill in all fields.")
+                elif "@" not in email or "." not in email.split("@")[-1]:
+                    st.error("Enter a valid email address.")
+                elif len(password) < 8:
+                    st.error("Password must be at least 8 characters.")
+                elif password != confirm:
+                    st.error("Passwords do not match.")
+                else:
+                    ok, msg = register_user(name, email, password)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+        else:
+            with st.form("login_form"):
+                email = st.text_input("Email address", placeholder="name@example.com")
+                password = st.text_input("Password", type="password")
+                submitted = st.form_submit_button("Sign in", use_container_width=True)
+            if submitted:
+                if not email or not password:
+                    st.error("Enter your email and password.")
+                else:
+                    user = authenticate(email, password)
+                    if user:
+                        st.session_state.user = {"id": user["id"], "name": user["name"], "email": user["email"]}
+                        st.rerun()
+                    else:
+                        st.error("Incorrect email or password.")
+        st.markdown('</div>', unsafe_allow_html=True)
+else:
+    user = st.session_state.user
+    top1, top2 = st.columns([4,1])
+    with top1:
+        st.subheader(f"Welcome, {user['name']} 👋")
+        st.caption("Your healthcare writing workspace")
+    with top2:
+        if st.button("Log out", use_container_width=True):
+            st.session_state.user = None
+            st.session_state.generated_content = ""
+            st.rerun()
+
+    st.markdown('<div class="notice">ⓘ <b>Responsible use:</b> This tool creates educational content only. It does not diagnose conditions, prescribe treatment, or replace advice from a qualified healthcare professional.</div>', unsafe_allow_html=True)
+    form_col, result_col = st.columns([1,1], gap="large")
+    with form_col:
+        st.markdown("### ✎ Build your content")
+        with st.form("generator_form"):
+            topic = st.text_area("Medical topic or brief", height=155, max_chars=1500,
+                                 placeholder="e.g. Explain the importance of regular blood pressure monitoring for adults...")
+            content_type = st.selectbox("Content format", [
+                "Patient Education Article", "Medical Blog", "Healthcare Awareness Post",
+                "Clinical Topic Summary", "Medical Newsletter", "Hospital Website Copy",
+                "Medical Student Notes", "Research Topic Overview"
+            ])
+            audience = st.selectbox("Target audience", [
+                "General public", "Patients and caregivers", "Medical students",
+                "Healthcare professionals", "Children and parents", "Hospital administrators"
+            ])
+            tone = st.selectbox("Writing tone", [
+                "Clear and reassuring", "Professional and informative",
+                "Simple and beginner-friendly", "Academic and formal",
+                "Empathetic and supportive"
+            ])
+            generate = st.form_submit_button("✦ Generate medical content", use_container_width=True)
+        if generate:
+            if not topic.strip():
+                st.error("Enter a medical topic or brief first.")
+            else:
+                with st.spinner("Generating your medical content..."):
+                    try:
+                        st.session_state.generated_content = generate_content(topic.strip(), content_type, audience, tone)
+                    except Exception as exc:
+                        st.error(str(exc))
+    with result_col:
+        st.markdown("### ✦ Your content")
+        content = st.session_state.generated_content
+        if content:
+            st.markdown('<div class="panel">', unsafe_allow_html=True)
+            st.markdown(content)
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.download_button("↓ Download .txt", data=content, file_name="medcontent-draft.txt",
+                               mime="text/plain", use_container_width=True)
+            st.caption("Select and copy the text above to copy it to your clipboard.")
+        else:
+            st.markdown("""
+            <div class="panel">
+              <h3>Your draft will appear here</h3>
+              <p class="small-muted">Enter a medical topic, select your audience and generate your first draft.</p>
+            </div>
+            """, unsafe_allow_html=True)
+    st.markdown("---")
+    a,b,c = st.columns(3)
+    a.markdown("**01 · Medical-first prompts**<br><span class='small-muted'>Designed for healthcare communication.</span>", unsafe_allow_html=True)
+    b.markdown("**02 · Audience-aware writing**<br><span class='small-muted'>Adapt language for different readers.</span>", unsafe_allow_html=True)
+    c.markdown("**03 · Responsible output**<br><span class='small-muted'>Educational content with safety reminders.</span>", unsafe_allow_html=True)
+
+st.markdown("<footer>© 2026 MedContent AI · Healthcare content assistance · Not medical advice</footer>", unsafe_allow_html=True)
